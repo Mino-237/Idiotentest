@@ -1,1 +1,60 @@
+name: "2 - Video erstellen"
+
+on:
+  workflow_dispatch:
+    # Wird NUR manuell gestartet (über den "Run workflow"-Button in
+    # GitHub Actions), nachdem du pending_quiz.json geprüft/bearbeitet
+    # hast. Läuft NICHT automatisch nach einem Zeitplan.
+
+permissions:
+  contents: write
+
+jobs:
+  create_video:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+
+      - name: Video erstellen
+        env:
+          AZURE_SPEECH_KEY: ${{ secrets.AZURE_SPEECH_KEY }}
+          AZURE_SPEECH_REGION: ${{ secrets.AZURE_SPEECH_REGION }}
+        run: python 2_create_video.py
+
+      - name: Fertiges Video zum Download bereitstellen
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tiktok-quiz-${{ github.run_id }}
+          path: output/video_final.mp4
+          retention-days: 14
+
+      - name: Alle Zwischendateien als Artifact sichern (zum Debuggen)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-output-${{ github.run_id }}
+          path: output/
+          retention-days: 14
+
+      - name: Test-Cache zurück ins Repo committen
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          [ -d test_cache ] && git add test_cache
+          git diff --staged --quiet || git commit -m "Test-Cache aktualisiert [skip ci]"
+          git pull --rebase origin main
+          git push
 
