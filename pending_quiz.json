@@ -1,0 +1,46 @@
+{
+  "titel": "Idiotentest: Schaffst du alle 7 Fragen?",
+  "intro": "Sieben Fragen, die easy aussehen - aber die meisten tippen die falsche Antwort. Bereit?",
+  "fragen": [
+    {
+      "frage": "Ein Bäcker hat 10 Brötchen. Er verkauft alle bis auf 4. Wie viele hat er noch?",
+      "antwort": "4",
+      "erklaerung": "'Bis auf 4' heißt, dass genau 4 übrig bleiben - viele rechnen trotzdem 10 minus 4."
+    },
+    {
+      "frage": "Wie viele Monate haben 28 Tage?",
+      "antwort": "Alle 12",
+      "erklaerung": "Jeder Monat hat mindestens 28 Tage - nur der Februar hat NICHT mehr als 28."
+    },
+    {
+      "frage": "Wenn du in einem dunklen Raum eine Kerze, eine Lampe und ein Streichholz hast, was zündest du zuerst an?",
+      "antwort": "Das Streichholz",
+      "erklaerung": "Ohne das Streichholz kannst du weder Kerze noch Lampe anzünden - logisch, aber leicht übersehen."
+    },
+    {
+      "frage": "Maria ist die Tochter von Herrn Schulz. Herr Schulz ist der Vater von 5 Töchtern: Lala, Lele, Lili, Lolo. Wie heißt die fünfte Tochter?",
+      "antwort": "Maria",
+      "erklaerung": "Die Frage nennt Maria bereits am Anfang als Tochter - im Reim-Rhythmus der anderen Namen übersieht man das."
+    },
+    {
+      "frage": "Ein Flugzeug stürzt exakt auf der Grenze zwischen Deutschland und Österreich ab. Wo begräbt man die Überlebenden?",
+      "antwort": "Nirgends, Überlebende begräbt man nicht",
+      "erklaerung": "Das Wort 'Überlebende' wird beim schnellen Zuhören überhört - man denkt an die Opfer."
+    },
+    {
+      "frage": "Du überholst beim Radrennen den Zweitplatzierten. Auf welchem Platz bist du jetzt?",
+      "antwort": "Auf Platz 2",
+      "erklaerung": "Du übernimmst seinen Platz, nicht den des Ersten - viele antworten reflexartig 'Platz 1'."
+    },
+    {
+      "frage": "Wie viele Tiere von jeder Art nahm Mose mit auf die Arche?",
+      "antwort": "Keine, das war Noah",
+      "erklaerung": "Die Arche gehört zur Geschichte von Noah - der Name 'Mose' schleicht sich unbemerkt ein."
+    }
+  ],
+  "outro": "Ganz schön viele Fallen für einen Idiotentest, oder? Lass ein Like da und folge BrainBuzz für mehr Idiotentests.",
+  "folge_nummer": 0,
+  "datum": "2026-09-27",
+  "anzahl_fragen": 7,
+  "testmodus": true
+}

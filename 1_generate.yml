@@ -1,0 +1,93 @@
+name: "1 - Quiz generieren"
+
+on:
+  # schedule:
+    # Läuft jeden Tag um 15:00 UTC = 17:00 Uhr deutsche Sommerzeit.
+    # Ab Ende Oktober (Winterzeit) auf "0 16 * * *" ändern, für 17:00 Uhr.
+    # - cron: "0 15 * * *"
+  workflow_dispatch:
+    # Erlaubt manuelles Starten über den "Run workflow"-Button, z.B. zum Testen.
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Quiz generieren
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python 1_generate.py
+
+      - name: Fragen-Historie/Zähler/Quiz zurück ins Repo committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in fragen_historie.json pending_quiz.json video_zaehler.json; do
+           [ -f "$f" ] && git add "$f"
+          done
+          git diff --staged --quiet || git commit -m "Neues Quiz zur Freigabe generiert [skip ci]"
+          git push
+
+      - name: Freigabe-Issue Text vorbereiten
+        run: |
+          python3 - <<'PYEOF'
+          import json
+
+          with open("pending_quiz.json", encoding="utf-8") as f:
+              d = json.load(f)
+
+          zeilen = [
+              f"Ein neues Quiz wurde generiert und wartet auf deine Prüfung, bevor "
+              f"es als Video veröffentlicht wird.",
+              "",
+              f"**Titel:** {d['titel']}",
+              "",
+              f"**Intro:** {d['intro']}",
+              "",
+              "**Fragen:**",
+              "",
+          ]
+          for i, frage in enumerate(d["fragen"], 1):
+              zeilen.append(f"{i}. {frage['frage']}")
+              zeilen.append(f"   - ✅ Antwort: {frage['antwort']}")
+              zeilen.append(f"   - 💡 {frage['erklaerung']}")
+              zeilen.append("")
+
+          zeilen.append(f"**Outro:** {d['outro']}")
+          zeilen.append("")
+          zeilen.append("---")
+          zeilen.append("")
+          zeilen.append("**So geht's weiter:**")
+          zeilen.append("1. Öffne `pending_quiz.json` in diesem Repository und bearbeite den Text bei Bedarf - direkt im Browser über den Stift-Button editierbar.")
+          zeilen.append("2. Sobald du zufrieden bist: Gehe zu 'Actions' → Workflow '2 - Video erstellen' → 'Run workflow'.")
+          zeilen.append("3. Nach einigen Minuten: Öffne den fertigen Workflow-Lauf, lade die Datei 'tiktok-quiz-...' unter 'Artifacts' herunter.")
+          zeilen.append("4. Lade das heruntergeladene Video manuell in der TikTok-App hoch.")
+          zeilen.append("5. Danach kannst du dieses Issue schließen.")
+
+          with open("issue_body.md", "w", encoding="utf-8") as f:
+              f.write("\n".join(zeilen))
+          PYEOF
+
+      - name: Freigabe-Issue erstellen
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TITEL=$(python3 -c "import json; print(json.load(open('pending_quiz.json'))['titel'])")
+          gh issue create \
+            --title "Quiz-Freigabe: $TITEL" \
+            --body-file issue_body.md \
+            --label "quiz-freigabe"
