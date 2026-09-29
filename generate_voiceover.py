@@ -76,7 +76,7 @@ def alle_schnipsel_erstellen(daten: dict):
         schnipsel_generieren(frage_text, os.path.join(AUDIO_ORDNER, f"frage_{i}.mp3"))
 
         print(f"Generiere Antwort {i}/{len(daten['fragen'])}...")
-        antwort_text = f"Die richtige Antwort: {frage['antwort']}. {frage['erklaerung']}"
+        antwort_text = f"Die richtige Antwort: {frage['antwort']}."
         schnipsel_generieren(antwort_text, os.path.join(AUDIO_ORDNER, f"antwort_{i}.mp3"))
 
     print("Generiere Outro...")
