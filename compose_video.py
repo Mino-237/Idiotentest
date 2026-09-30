@@ -49,6 +49,21 @@ PAUSE_VOR_ANTWORT = 0.2
 ANTWORT_HALTE_DAUER = 1.4      # wie lange die Antwort nach Sprechende noch stehen bleibt
 PAUSE_NACH_ANTWORT = 0.5
 
+# Nach dieser Fragen-Nummer wird (falls im Quiz vorhanden) der
+# "Zwischen-CTA" eingeblendet (z.B. "Wenn du bis hier geschafft hast,
+# lass ein Like da").
+ZWISCHEN_CTA_NACH_FRAGE = 4
+PAUSE_VOR_ZWISCHEN_CTA = 0.3
+PAUSE_NACH_ZWISCHEN_CTA = 0.5
+
+# Mindestlänge des fertigen Videos in Sekunden. Wird die durch Intro,
+# Fragen, Antworten & Pausen berechnete Gesamtdauer unterschritten (z.B.
+# weil wenige/kurze Fragen generiert wurden), wird automatisch pro Frage
+# etwas mehr "Antwort bleibt stehen"-Zeit ergänzt, um diese Länge zu
+# erreichen. 60s = Mindestvorgabe für TikTok Creator Rewards. Auf 0
+# setzen, um die Auto-Verlängerung zu deaktivieren.
+MINDEST_GESAMTDAUER = 60.0
+
 # --- Layout der Nummern-Liste links ---
 LISTE_X = 55
 LISTE_Y_START = 640
@@ -84,7 +99,7 @@ def text_umbrechen_und_escapen(text: str, breite: int = 26) -> str:
 # 1. Zeitleiste berechnen
 # ---------------------------------------------------------------------
 
-def zeitleiste_berechnen(anzahl_fragen: int):
+def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
     """Liefert (fenster_pro_frage, audio_segmente, gesamt_dauer).
 
     fenster_pro_frage: Liste von dicts mit den Start-/End-Zeitpunkten
@@ -94,9 +109,15 @@ def zeitleiste_berechnen(anzahl_fragen: int):
     audio_segmente: Liste von (typ, wert) - typ ist "datei" (wert = Pfad)
     oder "stille" (wert = Dauer in Sekunden), in der Reihenfolge, in der
     sie später zur finalen Tonspur zusammengesetzt werden.
+
+    zusatz_halte_dauer: wird zusätzlich zu ANTWORT_HALTE_DAUER pro Frage
+    als Stille eingefügt - genutzt, um die Gesamtdauer bei Bedarf auf
+    MINDEST_GESAMTDAUER zu strecken (siehe video_zusammensetzen).
     """
+    halte_dauer = ANTWORT_HALTE_DAUER + zusatz_halte_dauer
     audio_segmente = []
     fenster_liste = []
+    zwischen_cta_fenster = None
     t = 0.0
 
     intro_pfad = os.path.join(AUDIO_ORDNER, "intro.mp3")
@@ -132,8 +153,8 @@ def zeitleiste_berechnen(anzahl_fragen: int):
         audio_segmente.append(("datei", antwort_pfad))
         t += antwort_dauer
 
-        audio_segmente.append(("stille", ANTWORT_HALTE_DAUER))
-        t += ANTWORT_HALTE_DAUER
+        audio_segmente.append(("stille", halte_dauer))
+        t += halte_dauer
         fenster_ende = t
 
         audio_segmente.append(("stille", PAUSE_NACH_ANTWORT))
@@ -147,12 +168,26 @@ def zeitleiste_berechnen(anzahl_fragen: int):
             "fenster_ende": fenster_ende,
         })
 
+        if i == ZWISCHEN_CTA_NACH_FRAGE:
+            zwischen_cta_pfad = os.path.join(AUDIO_ORDNER, "zwischen_cta.mp3")
+            if os.path.exists(zwischen_cta_pfad):
+                audio_segmente.append(("stille", PAUSE_VOR_ZWISCHEN_CTA))
+                t += PAUSE_VOR_ZWISCHEN_CTA
+
+                zwischen_cta_start = t
+                audio_segmente.append(("datei", zwischen_cta_pfad))
+                t += audio_dauer(zwischen_cta_pfad)
+                zwischen_cta_fenster = {"start": zwischen_cta_start, "ende": t}
+
+                audio_segmente.append(("stille", PAUSE_NACH_ZWISCHEN_CTA))
+                t += PAUSE_NACH_ZWISCHEN_CTA
+
     outro_pfad = os.path.join(AUDIO_ORDNER, "outro.mp3")
     if os.path.exists(outro_pfad):
         audio_segmente.append(("datei", outro_pfad))
         t += audio_dauer(outro_pfad)
 
-    return fenster_liste, audio_segmente, t
+    return fenster_liste, audio_segmente, t, zwischen_cta_fenster
 
 
 # ---------------------------------------------------------------------
@@ -207,7 +242,8 @@ def hintergrund_vorbereiten(gesamt_dauer: float) -> str:
 # 3. Video-Filtergraph (Text-Overlays) bauen
 # ---------------------------------------------------------------------
 
-def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool) -> tuple:
+def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
+                        zwischen_cta_text: str = None, zwischen_cta_fenster: dict = None) -> tuple:
     filter_teile = []
     label = "0:v"
 
@@ -280,6 +316,19 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool) 
         )
         label = neues_label
 
+    # Zwischen-CTA nach Frage 4 (z.B. "Wenn du es bis hier geschafft hast...")
+    if zwischen_cta_text and zwischen_cta_fenster:
+        cta_text = text_umbrechen_und_escapen(zwischen_cta_text, breite=26)
+        neues_label = "vzwischencta"
+        filter_teile.append(
+            f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{cta_text}':"
+            f"fontsize=48:fontcolor=white:line_spacing=14:"
+            f"x=(w-text_w)/2:y=1320:box=1:boxcolor={FARBE_AKZENT}@0.85:boxborderw=26:"
+            f"enable='between(t,{zwischen_cta_fenster['start']:.2f},{zwischen_cta_fenster['ende']:.2f})'"
+            f"[{neues_label}]"
+        )
+        label = neues_label
+
     # Logo/Kanalname unten
     if logo_vorhanden:
         finaler_video_output = "[vout]"
@@ -306,7 +355,19 @@ def video_zusammensetzen():
         daten = json.load(f)
 
     fragen = daten["fragen"]
-    fenster_liste, audio_segmente, gesamt_dauer = zeitleiste_berechnen(len(fragen))
+    fenster_liste, audio_segmente, gesamt_dauer, zwischen_cta_fenster = zeitleiste_berechnen(len(fragen))
+
+    if MINDEST_GESAMTDAUER > 0 and gesamt_dauer < MINDEST_GESAMTDAUER:
+        fehlend = MINDEST_GESAMTDAUER - gesamt_dauer
+        zusatz_pro_frage = fehlend / len(fragen)
+        print(
+            f"Video wäre nur {gesamt_dauer:.1f}s lang (< {MINDEST_GESAMTDAUER:.0f}s "
+            f"Mindestlänge) - verlängere jede Antwort-Anzeige um "
+            f"{zusatz_pro_frage:.2f}s..."
+        )
+        fenster_liste, audio_segmente, gesamt_dauer, zwischen_cta_fenster = zeitleiste_berechnen(
+            len(fragen), zusatz_halte_dauer=zusatz_pro_frage
+        )
 
     print(f"Berechnete Gesamtdauer: {gesamt_dauer:.1f}s ({len(fragen)} Fragen)")
 
@@ -337,7 +398,11 @@ def video_zusammensetzen():
         audio_input_labels.append(f"{naechster_index}:a")
         naechster_index += 1
 
-    video_filter, finaler_video_output = video_filter_bauen(fragen, fenster_liste, logo_vorhanden)
+    video_filter, finaler_video_output = video_filter_bauen(
+        fragen, fenster_liste, logo_vorhanden,
+        zwischen_cta_text=daten.get("zwischen_cta"),
+        zwischen_cta_fenster=zwischen_cta_fenster,
+    )
 
     filter_complex_teile = []
     if logo_vorhanden:
