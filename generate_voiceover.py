@@ -70,6 +70,8 @@ def alle_schnipsel_erstellen(daten: dict):
     print("Generiere Intro...")
     schnipsel_generieren(daten["intro"], os.path.join(AUDIO_ORDNER, "intro.mp3"))
 
+    zwischen_cta = daten.get("zwischen_cta")
+
     for i, frage in enumerate(daten["fragen"], start=1):
         print(f"Generiere Frage {i}/{len(daten['fragen'])}...")
         frage_text = f"Frage {i}: {frage['frage']}"
@@ -78,6 +80,10 @@ def alle_schnipsel_erstellen(daten: dict):
         print(f"Generiere Antwort {i}/{len(daten['fragen'])}...")
         antwort_text = f"Die richtige Antwort: {frage['antwort']}."
         schnipsel_generieren(antwort_text, os.path.join(AUDIO_ORDNER, f"antwort_{i}.mp3"))
+
+        if i == 4 and zwischen_cta:
+            print("Generiere Zwischen-CTA (nach Frage 4)...")
+            schnipsel_generieren(zwischen_cta, os.path.join(AUDIO_ORDNER, "zwischen_cta.mp3"))
 
     print("Generiere Outro...")
     schnipsel_generieren(daten["outro"], os.path.join(AUDIO_ORDNER, "outro.mp3"))
