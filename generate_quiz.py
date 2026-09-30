@@ -76,9 +76,20 @@ STRUKTUR DER GESAMTEN AUSGABE:
   Mitraten macht und die Fragenanzahl nennt
 - "fragen": Liste mit genau {{anzahl}} Objekten, je
   {{"frage": "...", "antwort": "...", "erklaerung": "..."}}
-- "outro": Ein kurzer, humorvoller Abschluss-Satz + Like-und-Folgen-
-  Einladung, angelehnt an: "Lass ein Like da und folge {KANAL_NAME} für
-  mehr Idiotentests." (Wortlaut darf leicht variiert werden)
+- "zwischen_cta": EIN kurzer, gesprochener Satz, der NACH der vierten
+  Frage eingeblendet wird (mitten im Video). Ermutigt locker/humorvoll
+  dazu, ein Like da zu lassen, WEIL man schon bis hierhin durchgehalten
+  hat - z.B. in der Art "Wenn du es bis hier geschafft hast, lass ruhig
+  ein Like da." (Wortlaut variieren, Grundidee "bis hierhin geschafft +
+  Like" beibehalten, max. ca. 15 Wörter)
+- "outro": Ein kurzer, humorvoller Abschluss-Satz, der zum TEILEN
+  animiert - im Stil eines liebevollen Seitenhiebs auf einen Freund,
+  z.B. "Schick das deinem Freund, der geistig manchmal im
+  Energiesparmodus läuft." (Wortlaut/Ziel-Person variieren, IMMER
+  humorvoll-freundschaftlich, NIEMALS beleidigend/gemein). Danach folgt
+  im selben Feld noch ein kurzer Zusatz "Und folge mir für mehr
+  Idiotentests." (leicht variierbar, aber KEINEN Kanalnamen nennen -
+  nur "folge mir")
 
 Antworte NUR mit validem JSON, keine Markdown-Codeblöcke, kein Vorspann.
 Format:
@@ -88,6 +99,7 @@ Format:
   "fragen": [
     {{"frage": "...", "antwort": "...", "erklaerung": "..."}}
   ],
+  "zwischen_cta": "...",
   "outro": "..."
 }}
 """
@@ -132,7 +144,8 @@ TEST_QUIZ = {
             "erklaerung": "Die Arche gehört zur Geschichte von Noah - der Name 'Mose' schleicht sich unbemerkt ein."
         },
     ],
-    "outro": "Ganz schön viele Fallen für einen Idiotentest, oder? Lass ein Like da und folge BrainBuzz für mehr Idiotentests.",
+    "outro": "Schick das deinem Freund, der geistig manchmal im Energiesparmodus läuft. Und folge mir für mehr Idiotentests.",
+    "zwischen_cta": "Wenn du es bis hier geschafft hast, lass ruhig ein Like da.",
 }
 
 
@@ -237,6 +250,10 @@ def main():
         historie_speichern(historie)
         folge_nummer = naechste_folgen_nummer()
 
+    daten.setdefault(
+        "zwischen_cta",
+        "Wenn du es bis hier geschafft hast, lass ruhig ein Like da.",
+    )
     daten["folge_nummer"] = folge_nummer
     daten["datum"] = datetime.now().strftime("%Y-%m-%d")
     daten["anzahl_fragen"] = len(daten["fragen"])
