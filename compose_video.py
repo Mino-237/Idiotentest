@@ -64,10 +64,21 @@ PAUSE_NACH_ZWISCHEN_CTA = 0.5
 # setzen, um die Auto-Verlängerung zu deaktivieren.
 MINDEST_GESAMTDAUER = 60.0
 
-# --- Layout der Nummern-Liste links ---
+# --- Layout ---
+# Von oben nach unten: Titel-Badge -> Fragetext (FRAGE_Y) -> Nummern-
+# Liste. Die Antwort jeder Frage wird neben ihrer Nummer eingeblendet und
+# bleibt bis zum Videoende stehen. Der 3-2-1-Countdown läuft in der Zeile
+# der aktuellen Frage, genau dort, wo danach die Antwort erscheint.
+FRAGE_Y = 250
 LISTE_X = 55
-LISTE_Y_START = 640
-LISTE_ZEILENHOEHE = 78
+LISTE_Y_START = 720
+LISTE_ZEILENHOEHE = 90
+LISTE_SCHRIFT = 54
+ANTWORT_X = 190
+ANTWORT_MAX_BREITE = 830       # verfügbare Pixelbreite für die Antwort
+ANTWORT_MAX_SCHRIFT = 54
+ANTWORT_MIN_SCHRIFT = 30
+COUNTDOWN_SCHRIFT = 66
 
 
 def audio_dauer(pfad: str) -> float:
@@ -88,6 +99,15 @@ def text_fuer_drawtext_escapen(text: str) -> str:
         .replace("'", "\u2019")
         .replace("%", "\\%")
     )
+
+
+def antwort_schriftgroesse(text: str) -> int:
+    """Wählt die größte Schrift (bis ANTWORT_MAX_SCHRIFT), bei der die
+    Antwort noch in eine Zeile neben der Nummer passt. DejaVu Sans Bold
+    ist im Schnitt ca. 0.65 x Schriftgröße pro Zeichen breit."""
+    laenge = max(1, len(text))
+    passend = int(ANTWORT_MAX_BREITE / (0.65 * laenge))
+    return max(ANTWORT_MIN_SCHRIFT, min(ANTWORT_MAX_SCHRIFT, passend))
 
 
 def text_umbrechen_und_escapen(text: str, breite: int = 26) -> str:
@@ -263,7 +283,7 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         neues_label = f"vnum{i}"
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{i}.':"
-            f"fontsize=46:fontcolor=white@0.8:x={LISTE_X}:y={y}[{neues_label}]"
+            f"fontsize={LISTE_SCHRIFT}:fontcolor=white@0.8:x={LISTE_X}:y={y}[{neues_label}]"
         )
         label = neues_label
 
@@ -273,7 +293,7 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         neues_label = f"vnumh{i}"
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{i}.':"
-            f"fontsize=50:fontcolor={FARBE_AKZENT}:x={LISTE_X - 2}:y={y - 2}:"
+            f"fontsize={LISTE_SCHRIFT}:fontcolor={FARBE_AKZENT}:x={LISTE_X}:y={y}:"
             f"enable='between(t,{fenster['frage_start']:.2f},{fenster['fenster_ende']:.2f})'"
             f"[{neues_label}]"
         )
@@ -281,37 +301,48 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
 
     # Fragetext + Countdown + Antwort pro Frage
     for i, (frage, fenster) in enumerate(zip(fragen, fenster_liste), start=1):
-        frage_text = text_umbrechen_und_escapen(frage["frage"], breite=24)
+        zeile_y = LISTE_Y_START + (i - 1) * LISTE_ZEILENHOEHE
+
+        # Fragetext: oben zwischen Titel und Liste, nur solange die
+        # jeweilige Frage aktiv ist
+        frage_text = text_umbrechen_und_escapen(frage["frage"], breite=26)
         neues_label = f"vfrage{i}"
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{frage_text}':"
-            f"fontsize=52:fontcolor=white:line_spacing=16:"
-            f"x=(w-text_w)/2:y=720:box=1:boxcolor=black@0.45:boxborderw=26:"
+            f"fontsize=48:fontcolor=white:line_spacing=14:"
+            f"x=(w-text_w)/2:y={FRAGE_Y}:box=1:boxcolor=black@0.45:boxborderw=26:"
             f"enable='between(t,{fenster['frage_start']:.2f},{fenster['fenster_ende']:.2f})'"
             f"[{neues_label}]"
         )
         label = neues_label
 
+        # Countdown 3-2-1: in der Zeile der aktuellen Frage, genau dort,
+        # wo danach die Antwort erscheint
         for k, ziffer in enumerate(["3", "2", "1"]):
             ziffer_start = fenster["countdown_start"] + k * 1.0
             ziffer_ende = ziffer_start + 1.0
             neues_label = f"vcd{i}_{k}"
             filter_teile.append(
                 f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{ziffer}':"
-                f"fontsize=150:fontcolor={FARBE_COUNTDOWN}:"
-                f"x=(w-text_w)/2:y=1180:"
+                f"fontsize={COUNTDOWN_SCHRIFT}:fontcolor={FARBE_COUNTDOWN}:"
+                f"x={ANTWORT_X}:y={zeile_y - 6}:"
                 f"enable='between(t,{ziffer_start:.2f},{ziffer_ende:.2f})'"
                 f"[{neues_label}]"
             )
             label = neues_label
 
-        antwort_text = text_umbrechen_und_escapen(f"Antwort: {frage['antwort']}", breite=26)
+        # Antwort: neben ihrer Nummer, bleibt ab dem Reveal bis zum
+        # Videoende stehen
+        antwort_roh = frage["antwort"]
+        antwort_text = text_fuer_drawtext_escapen(antwort_roh)
+        antwort_schrift = antwort_schriftgroesse(antwort_roh)
+        antwort_y = zeile_y + (LISTE_SCHRIFT - antwort_schrift) // 2
         neues_label = f"vantwort{i}"
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{antwort_text}':"
-            f"fontsize=50:fontcolor={FARBE_RICHTIG}:line_spacing=14:"
-            f"x=(w-text_w)/2:y=1320:box=1:boxcolor=black@0.55:boxborderw=24:"
-            f"enable='between(t,{fenster['antwort_start']:.2f},{fenster['fenster_ende']:.2f})'"
+            f"fontsize={antwort_schrift}:fontcolor={FARBE_RICHTIG}:"
+            f"x={ANTWORT_X}:y={antwort_y}:"
+            f"enable='gte(t,{fenster['antwort_start']:.2f})'"
             f"[{neues_label}]"
         )
         label = neues_label
@@ -323,7 +354,7 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{cta_text}':"
             f"fontsize=48:fontcolor=white:line_spacing=14:"
-            f"x=(w-text_w)/2:y=1320:box=1:boxcolor={FARBE_AKZENT}@0.85:boxborderw=26:"
+            f"x=(w-text_w)/2:y={FRAGE_Y}:box=1:boxcolor={FARBE_AKZENT}@0.85:boxborderw=26:"
             f"enable='between(t,{zwischen_cta_fenster['start']:.2f},{zwischen_cta_fenster['ende']:.2f})'"
             f"[{neues_label}]"
         )
