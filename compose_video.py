@@ -58,6 +58,11 @@ PAUSE_NACH_ANTWORT = 0.5
 # "Zwischen-CTA" eingeblendet (z.B. "Wenn du bis hier geschafft hast,
 # lass ein Like da").
 ZWISCHEN_CTA_NACH_FRAGE = 4
+# Wie lange die Antwort nach der Stimme noch steht, wenn direkt danach der
+# Zwischen-CTA kommt (statt der normalen ANTWORT_HALTE_DAUER). Zusammen mit
+# PAUSE_VOR_ZWISCHEN_CTA ergibt das die komplette Pause zwischen Antwort 4
+# und dem Like-Satz.
+ZWISCHEN_CTA_HALTE = 0.3
 PAUSE_VOR_ZWISCHEN_CTA = 0.3
 PAUSE_NACH_ZWISCHEN_CTA = 0.5
 
@@ -92,6 +97,11 @@ COUNTDOWN_SCHRIFT = 120        # mittelgroß, in der Bildmitte
 COUNTDOWN_SOUND_DATEIEN = ["assets/countdown_sound.wav", "assets/countdown_sound.mp3"]
 COUNTDOWN_AUDIO = "output/countdown.wav"
 COUNTDOWN_LAUTSTAERKE = 2.5
+# Der Ton ist länger als die 3 sichtbaren Ziffern: 3 gleich hohe Piep-Töne
+# bei 3 - 2 - 1 und ein höherer Abschluss-Ton genau 1 Sekunde nach dem
+# letzten, also beim Ende des Countdowns. Er läuft bis zum Start der
+# Antwort-Stimme (COUNTDOWN_DAUER + PAUSE_VOR_ANTWORT).
+COUNTDOWN_TON_DAUER = COUNTDOWN_DAUER + PAUSE_VOR_ANTWORT
 
 
 def audio_dauer(pfad: str) -> float:
@@ -133,10 +143,10 @@ def sprach_schnipsel_in_wav_umwandeln():
 
 
 def countdown_audio_vorbereiten() -> str:
-    """Erzeugt output/countdown.wav (genau COUNTDOWN_DAUER lang, 24 kHz
+    """Erzeugt output/countdown.wav (genau COUNTDOWN_TON_DAUER lang, 24 kHz
     mono - passend zu den Sprach-Schnipseln, damit concat funktioniert).
     Nutzt eine eigene Datei aus assets/, falls vorhanden, sonst werden
-    3 Piep-Töne synthetisiert."""
+    4 Piep-Töne synthetisiert (3x tief, am Ende 1x hoch)."""
     os.makedirs("output", exist_ok=True)
     eigene_datei = next((p for p in COUNTDOWN_SOUND_DATEIEN if os.path.exists(p)), None)
 
@@ -145,8 +155,8 @@ def countdown_audio_vorbereiten() -> str:
         befehl = [
             "ffmpeg", "-y", "-loglevel", "error",
             "-i", eigene_datei,
-            "-af", f"aresample=24000,apad=whole_dur={COUNTDOWN_DAUER}",
-            "-ac", "1", "-ar", "24000", "-t", f"{COUNTDOWN_DAUER}",
+            "-af", f"aresample=24000,apad=whole_dur={COUNTDOWN_TON_DAUER}",
+            "-ac", "1", "-ar", "24000", "-t", f"{COUNTDOWN_TON_DAUER}",
             COUNTDOWN_AUDIO,
         ]
     else:
@@ -154,12 +164,14 @@ def countdown_audio_vorbereiten() -> str:
             "ffmpeg", "-y", "-loglevel", "error",
             "-f", "lavfi", "-i", "sine=frequency=880:duration=0.20:sample_rate=24000",
             "-f", "lavfi", "-i", "sine=frequency=880:duration=0.20:sample_rate=24000",
-            "-f", "lavfi", "-i", "sine=frequency=1320:duration=0.40:sample_rate=24000",
+            "-f", "lavfi", "-i", "sine=frequency=880:duration=0.20:sample_rate=24000",
+            "-f", "lavfi", "-i", "sine=frequency=1320:duration=0.20:sample_rate=24000",
             "-filter_complex",
             "[0]afade=t=out:st=0.12:d=0.08,apad=whole_dur=1[a0];"
             "[1]afade=t=out:st=0.12:d=0.08,apad=whole_dur=1[a1];"
-            "[2]afade=t=out:st=0.25:d=0.15,apad=whole_dur=1[a2];"
-            f"[a0][a1][a2]concat=n=3:v=0:a=1,volume={COUNTDOWN_LAUTSTAERKE}[aout]",
+            "[2]afade=t=out:st=0.12:d=0.08,apad=whole_dur=1[a2];"
+            "[3]afade=t=out:st=0.12:d=0.08[a3];"
+            f"[a0][a1][a2][a3]concat=n=4:v=0:a=1,volume={COUNTDOWN_LAUTSTAERKE}[aout]",
             "-map", "[aout]", "-ac", "1", "-ar", "24000",
             COUNTDOWN_AUDIO,
         ]
@@ -227,27 +239,33 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
         t += PAUSE_VOR_COUNTDOWN
 
         countdown_start = t
+        countdown_ende = t + COUNTDOWN_DAUER
         if os.path.exists(COUNTDOWN_AUDIO):
+            # Der Ton enthält bereits die Pause vor der Antwort
             audio_segmente.append(("datei", COUNTDOWN_AUDIO))
         else:
             audio_segmente.append(("stille", COUNTDOWN_DAUER))
-        t += COUNTDOWN_DAUER
-        countdown_ende = t
-
-        audio_segmente.append(("stille", PAUSE_VOR_ANTWORT))
-        t += PAUSE_VOR_ANTWORT
+            audio_segmente.append(("stille", PAUSE_VOR_ANTWORT))
+        t += COUNTDOWN_DAUER + PAUSE_VOR_ANTWORT
 
         antwort_start = t
         antwort_dauer = audio_dauer(antwort_pfad)
         audio_segmente.append(("datei", antwort_pfad))
         t += antwort_dauer
 
-        audio_segmente.append(("stille", halte_dauer))
-        t += halte_dauer
+        # Folgt direkt der Zwischen-CTA, wird die Pause nach der Antwort
+        # deutlich verkürzt
+        cta_pfad = os.path.join(AUDIO_ORDNER, "zwischen_cta.wav")
+        folgt_cta = (i == ZWISCHEN_CTA_NACH_FRAGE and os.path.exists(cta_pfad))
+        halte = ZWISCHEN_CTA_HALTE if folgt_cta else halte_dauer
+
+        audio_segmente.append(("stille", halte))
+        t += halte
         fenster_ende = t
 
-        audio_segmente.append(("stille", PAUSE_NACH_ANTWORT))
-        t += PAUSE_NACH_ANTWORT
+        if not folgt_cta:
+            audio_segmente.append(("stille", PAUSE_NACH_ANTWORT))
+            t += PAUSE_NACH_ANTWORT
 
         fenster_liste.append({
             "frage_start": frage_start,
