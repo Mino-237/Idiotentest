@@ -360,18 +360,12 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         )
         label = neues_label
 
-    # Logo/Kanalname unten
+    # Logo unten (nur wenn assets/logo.png vorhanden ist). Ohne Logo wird
+    # bewusst nichts eingeblendet - kein Kanalname-Text mehr.
     if logo_vorhanden:
         finaler_video_output = "[vout]"
         filter_teile.append(f"[{label}][logoimg]overlay=40:H-h-70[vout]")
     else:
-        neues_label = "vkanal"
-        filter_teile.append(
-            f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{KANAL_NAME}':"
-            f"fontsize=48:fontcolor=white:x=40:y=h-110:"
-            f"box=1:boxcolor=black@0.35:boxborderw=14[{neues_label}]"
-        )
-        label = neues_label
         finaler_video_output = f"[{label}]"
 
     return ";".join(filter_teile), finaler_video_output
