@@ -10,7 +10,7 @@ Setzt das finale Quiz-Video zusammen aus:
    während der jeweiligen Frage farblich hervorgehoben wird
 4. Pro Frage: Fragetext, ein 3-2-1 Countdown und die Antwort-Einblendung
 5. Einem Logo/Kanalnamen-Overlay unten (assets/logo.png, optional)
-6. Der Tonspur aus output/audio/*.mp3, exakt zusammengesetzt aus den
+6. Der Tonspur aus output/audio/*.wav (aus den mp3s umgewandelt), exakt zusammengesetzt aus den
    echten Audio-Längen (ffprobe) - kein Schätzen, kein Transkribieren.
 
 WICHTIG: Die Zeiten für alle Text-Einblendungen werden AUSSCHLIESSLICH
@@ -39,7 +39,12 @@ KANAL_NAME = "BrainBuzz"
 
 FARBE_AKZENT = "0x9B5DE5"      # Lila-Badge/Highlight (wie Vorlage)
 FARBE_COUNTDOWN = "0xFFD24D"   # Gelb-orange
-FARBE_RICHTIG = "0x2ECC71"     # Grün für Antwort-Reveal
+FARBE_RICHTIG = "0x000000"     # Antwort-Text (schwarz)
+# Heller Kasten hinter der Antwort, damit schwarzer Text auf jedem
+# Hintergrundvideo lesbar bleibt. Auf False setzen für Text ohne Kasten.
+ANTWORT_BOX = True
+ANTWORT_BOX_FARBE = "white@0.88"
+ANTWORT_BOX_RAND = 8
 
 # --- Timing-Konstanten (alle in Sekunden) ---
 PAUSE_NACH_INTRO = 0.5
@@ -78,7 +83,15 @@ ANTWORT_X = 190
 ANTWORT_MAX_BREITE = 830       # verfügbare Pixelbreite für die Antwort
 ANTWORT_MAX_SCHRIFT = 54
 ANTWORT_MIN_SCHRIFT = 30
-COUNTDOWN_SCHRIFT = 66
+COUNTDOWN_SCHRIFT = 120        # mittelgroß, in der Bildmitte
+
+# Countdown-Ton: Wird assets/countdown_sound.wav (oder .mp3) gefunden,
+# wird diese Datei als gesamter 3-Sekunden-Countdown verwendet (Länge wird
+# automatisch angepasst). Sonst erzeugt das Skript selbst 3 Piep-Töne
+# (3 - 2 - 1, der letzte höher und länger).
+COUNTDOWN_SOUND_DATEIEN = ["assets/countdown_sound.wav", "assets/countdown_sound.mp3"]
+COUNTDOWN_AUDIO = "output/countdown.wav"
+COUNTDOWN_LAUTSTAERKE = 2.5
 
 
 def audio_dauer(pfad: str) -> float:
@@ -99,6 +112,59 @@ def text_fuer_drawtext_escapen(text: str) -> str:
         .replace("'", "\u2019")
         .replace("%", "\\%")
     )
+
+
+def sprach_schnipsel_in_wav_umwandeln():
+    """Wandelt alle Sprach-Schnipsel (output/audio/*.mp3) in WAV um
+    (24 kHz mono). WICHTIG fürs Timing: Die mp3-Länge laut ffprobe weicht
+    wegen Encoder-Padding minimal von den tatsächlich abgespielten Samples
+    ab - bei vielen aneinandergehängten Schnipseln summiert sich das zu
+    spürbarem Versatz zwischen Bild und Ton. Bei WAV ist die Länge exakt."""
+    for name in sorted(os.listdir(AUDIO_ORDNER)):
+        if not name.lower().endswith(".mp3"):
+            continue
+        quelle = os.path.join(AUDIO_ORDNER, name)
+        ziel = os.path.join(AUDIO_ORDNER, name[:-4] + ".wav")
+        subprocess.run(
+            ["ffmpeg", "-y", "-loglevel", "error", "-i", quelle,
+             "-ar", "24000", "-ac", "1", ziel],
+            check=True,
+        )
+
+
+def countdown_audio_vorbereiten() -> str:
+    """Erzeugt output/countdown.wav (genau COUNTDOWN_DAUER lang, 24 kHz
+    mono - passend zu den Sprach-Schnipseln, damit concat funktioniert).
+    Nutzt eine eigene Datei aus assets/, falls vorhanden, sonst werden
+    3 Piep-Töne synthetisiert."""
+    os.makedirs("output", exist_ok=True)
+    eigene_datei = next((p for p in COUNTDOWN_SOUND_DATEIEN if os.path.exists(p)), None)
+
+    if eigene_datei:
+        print(f"Nutze eigenen Countdown-Sound: {eigene_datei}")
+        befehl = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-i", eigene_datei,
+            "-af", f"aresample=24000,apad=whole_dur={COUNTDOWN_DAUER}",
+            "-ac", "1", "-ar", "24000", "-t", f"{COUNTDOWN_DAUER}",
+            COUNTDOWN_AUDIO,
+        ]
+    else:
+        befehl = [
+            "ffmpeg", "-y", "-loglevel", "error",
+            "-f", "lavfi", "-i", "sine=frequency=880:duration=0.20:sample_rate=24000",
+            "-f", "lavfi", "-i", "sine=frequency=880:duration=0.20:sample_rate=24000",
+            "-f", "lavfi", "-i", "sine=frequency=1320:duration=0.40:sample_rate=24000",
+            "-filter_complex",
+            "[0]afade=t=out:st=0.12:d=0.08,apad=whole_dur=1[a0];"
+            "[1]afade=t=out:st=0.12:d=0.08,apad=whole_dur=1[a1];"
+            "[2]afade=t=out:st=0.25:d=0.15,apad=whole_dur=1[a2];"
+            f"[a0][a1][a2]concat=n=3:v=0:a=1,volume={COUNTDOWN_LAUTSTAERKE}[aout]",
+            "-map", "[aout]", "-ac", "1", "-ar", "24000",
+            COUNTDOWN_AUDIO,
+        ]
+    subprocess.run(befehl, check=True)
+    return COUNTDOWN_AUDIO
 
 
 def antwort_schriftgroesse(text: str) -> int:
@@ -140,7 +206,7 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
     zwischen_cta_fenster = None
     t = 0.0
 
-    intro_pfad = os.path.join(AUDIO_ORDNER, "intro.mp3")
+    intro_pfad = os.path.join(AUDIO_ORDNER, "intro.wav")
     if os.path.exists(intro_pfad):
         dauer = audio_dauer(intro_pfad)
         audio_segmente.append(("datei", intro_pfad))
@@ -149,8 +215,8 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
         t += PAUSE_NACH_INTRO
 
     for i in range(1, anzahl_fragen + 1):
-        frage_pfad = os.path.join(AUDIO_ORDNER, f"frage_{i}.mp3")
-        antwort_pfad = os.path.join(AUDIO_ORDNER, f"antwort_{i}.mp3")
+        frage_pfad = os.path.join(AUDIO_ORDNER, f"frage_{i}.wav")
+        antwort_pfad = os.path.join(AUDIO_ORDNER, f"antwort_{i}.wav")
 
         frage_start = t
         frage_dauer = audio_dauer(frage_pfad)
@@ -161,7 +227,10 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
         t += PAUSE_VOR_COUNTDOWN
 
         countdown_start = t
-        audio_segmente.append(("stille", COUNTDOWN_DAUER))
+        if os.path.exists(COUNTDOWN_AUDIO):
+            audio_segmente.append(("datei", COUNTDOWN_AUDIO))
+        else:
+            audio_segmente.append(("stille", COUNTDOWN_DAUER))
         t += COUNTDOWN_DAUER
         countdown_ende = t
 
@@ -189,7 +258,7 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
         })
 
         if i == ZWISCHEN_CTA_NACH_FRAGE:
-            zwischen_cta_pfad = os.path.join(AUDIO_ORDNER, "zwischen_cta.mp3")
+            zwischen_cta_pfad = os.path.join(AUDIO_ORDNER, "zwischen_cta.wav")
             if os.path.exists(zwischen_cta_pfad):
                 audio_segmente.append(("stille", PAUSE_VOR_ZWISCHEN_CTA))
                 t += PAUSE_VOR_ZWISCHEN_CTA
@@ -202,7 +271,7 @@ def zeitleiste_berechnen(anzahl_fragen: int, zusatz_halte_dauer: float = 0.0):
                 audio_segmente.append(("stille", PAUSE_NACH_ZWISCHEN_CTA))
                 t += PAUSE_NACH_ZWISCHEN_CTA
 
-    outro_pfad = os.path.join(AUDIO_ORDNER, "outro.mp3")
+    outro_pfad = os.path.join(AUDIO_ORDNER, "outro.wav")
     if os.path.exists(outro_pfad):
         audio_segmente.append(("datei", outro_pfad))
         t += audio_dauer(outro_pfad)
@@ -316,8 +385,8 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         )
         label = neues_label
 
-        # Countdown 3-2-1: in der Zeile der aktuellen Frage, genau dort,
-        # wo danach die Antwort erscheint
+        # Countdown 3-2-1: mittelgroß in der Bildmitte (mit dunklem Kasten
+        # für Lesbarkeit). Der Piep-Ton kommt aus countdown_audio_vorbereiten.
         for k, ziffer in enumerate(["3", "2", "1"]):
             ziffer_start = fenster["countdown_start"] + k * 1.0
             ziffer_ende = ziffer_start + 1.0
@@ -325,7 +394,8 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
             filter_teile.append(
                 f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{ziffer}':"
                 f"fontsize={COUNTDOWN_SCHRIFT}:fontcolor={FARBE_COUNTDOWN}:"
-                f"x={ANTWORT_X}:y={zeile_y - 6}:"
+                f"x=(w-text_w)/2:y=(h-text_h)/2:"
+                f"box=1:boxcolor=black@0.88:boxborderw=36:"
                 f"enable='between(t,{ziffer_start:.2f},{ziffer_ende:.2f})'"
                 f"[{neues_label}]"
             )
@@ -338,10 +408,14 @@ def video_filter_bauen(fragen: list, fenster_liste: list, logo_vorhanden: bool,
         antwort_schrift = antwort_schriftgroesse(antwort_roh)
         antwort_y = zeile_y + (LISTE_SCHRIFT - antwort_schrift) // 2
         neues_label = f"vantwort{i}"
+        box_teil = (
+            f"box=1:boxcolor={ANTWORT_BOX_FARBE}:boxborderw={ANTWORT_BOX_RAND}:"
+            if ANTWORT_BOX else ""
+        )
         filter_teile.append(
             f"[{label}]drawtext=fontfile={FONT_PFAD}:text='{antwort_text}':"
             f"fontsize={antwort_schrift}:fontcolor={FARBE_RICHTIG}:"
-            f"x={ANTWORT_X}:y={antwort_y}:"
+            f"x={ANTWORT_X}:y={antwort_y}:{box_teil}"
             f"enable='gte(t,{fenster['antwort_start']:.2f})'"
             f"[{neues_label}]"
         )
@@ -380,6 +454,8 @@ def video_zusammensetzen():
         daten = json.load(f)
 
     fragen = daten["fragen"]
+    sprach_schnipsel_in_wav_umwandeln()
+    countdown_audio_vorbereiten()
     fenster_liste, audio_segmente, gesamt_dauer, zwischen_cta_fenster = zeitleiste_berechnen(len(fragen))
 
     if MINDEST_GESAMTDAUER > 0 and gesamt_dauer < MINDEST_GESAMTDAUER:
